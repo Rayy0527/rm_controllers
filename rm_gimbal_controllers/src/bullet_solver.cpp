@@ -233,7 +233,7 @@ bool BulletSolver::solve(geometry_msgs::Point pos, geometry_msgs::Vector3 vel, d
     error = std::sqrt(std::pow(error_theta * target_rho, 2) + std::pow(error_z, 2));
     count++;
 
-    if (count >= 20 || std::isnan(error))
+    if (count >= 100 || std::isnan(error))
       return false;
   }
   if (fly_time_pub_->trylock())
