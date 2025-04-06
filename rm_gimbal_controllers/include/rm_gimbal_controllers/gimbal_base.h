@@ -55,6 +55,7 @@
 #include <urdf/model.h>
 #include <dynamic_reconfigure/server.h>
 #include <realtime_tools/realtime_publisher.h>
+#include <rm_common/decision/command_sender.h>
 #include <unordered_map>
 
 namespace rm_gimbal_controllers
@@ -173,14 +174,13 @@ private:
   std::shared_ptr<realtime_tools::RealtimePublisher<rm_msgs::GimbalDesError>> error_pub_;
   ros::Subscriber cmd_gimbal_sub_;
   ros::Subscriber data_track_sub_;
+  ros::Subscriber data_odom2target_sub_;
   realtime_tools::RealtimeBuffer<rm_msgs::GimbalCmd> cmd_rt_buffer_;
-  realtime_tools::RealtimeBuffer<rm_msgs::TrackData> track_rt_buffer_;
-  realtime_tools::RealtimeBuffer<rm_msgs::TrackData> odom2target_rt_buffer_;
-  urdf::JointConstSharedPtr pitch_joint_urdf_, yaw_joint_urdf_;
+  realtime_tools::RealtimeBuffer<rm_msgs::TrackData> track_rt_buffer_, odom2target_rt_buffer_;
 
   rm_msgs::GimbalCmd cmd_gimbal_;
-  rm_msgs::TrackData data_track_;
-  rm_msgs::TrackData data_odom2target_;
+  rm_msgs::TrackData data_track_, data_odom2target_, data_selected_;
+  rm_common::GimbalCommandSender* gimbal_cmd_sender_{};
   std::string gimbal_des_frame_id_{}, imu_name_{};
   double publish_rate_{};
   bool state_changed_{};

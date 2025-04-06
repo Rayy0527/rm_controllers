@@ -41,6 +41,7 @@
 #include <rm_common/ros_utilities.h>
 #include <rm_common/ori_tool.h>
 #include <pluginlib/class_list_macros.hpp>
+#include <rm_common/decision/command_sender.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf/transform_datatypes.h>
 
@@ -169,6 +170,10 @@ void Controller::update(const ros::Time& time, const ros::Duration& period)
   data_track_ = *track_rt_buffer_.readFromNonRT();
   data_odom2target_ = *odom2target_rt_buffer_.readFromRT();
   config_ = *config_rt_buffer_.readFromRT();
+  if (gimbal_cmd_sender_->getUseLio())
+    data_selected_ = data_odom2target_;
+  else
+    data_selected_ = data_track_;
   try
   {
     odom2gimbal_ = robot_state_handle_.lookupTransform("odom", odom2gimbal_.child_frame_id, time);
@@ -249,16 +254,16 @@ void Controller::track(const ros::Time& time)
   quatToRPY(odom2gimbal_.transform.rotation, roll_real, pitch_real, yaw_real);
   double yaw_compute = yaw_real;
   double pitch_compute = -pitch_real;
-  geometry_msgs::Point target_pos = data_track_.position;
+  geometry_msgs::Point target_pos = data_selected_.position;
   geometry_msgs::Vector3 target_vel{};
-  if (data_track_.id != 12)
-    target_vel = data_track_.velocity;
+  if (data_selected_.id != 12)
+    target_vel = data_selected_.velocity;
   try
   {
-    if (!data_track_.header.frame_id.empty())
+    if (!data_selected_.header.frame_id.empty())
     {
       geometry_msgs::TransformStamped transform =
-          robot_state_handle_.lookupTransform("odom", data_track_.header.frame_id, data_track_.header.stamp);
+          robot_state_handle_.lookupTransform("odom", data_selected_.header.frame_id, data_selected_.header.stamp);
       tf2::doTransform(target_pos, target_pos, transform);
       tf2::doTransform(target_vel, target_vel, transform);
     }
@@ -267,30 +272,30 @@ void Controller::track(const ros::Time& time)
   {
     ROS_WARN("%s", ex.what());
   }
-  double yaw = data_track_.yaw + data_track_.v_yaw * ((time - data_track_.header.stamp).toSec());
+  double yaw = data_selected_.yaw + data_selected_.v_yaw * ((time - data_selected_.header.stamp).toSec());
   while (yaw > M_PI)
     yaw -= 2 * M_PI;
   while (yaw < -M_PI)
     yaw += 2 * M_PI;
-  target_pos.x += target_vel.x * (time - data_track_.header.stamp).toSec() - odom2gimbal_.transform.translation.x;
-  target_pos.y += target_vel.y * (time - data_track_.header.stamp).toSec() - odom2gimbal_.transform.translation.y;
-  target_pos.z += target_vel.z * (time - data_track_.header.stamp).toSec() - odom2gimbal_.transform.translation.z;
+  target_pos.x += target_vel.x * (time - data_selected_.header.stamp).toSec() - odom2gimbal_.transform.translation.x;
+  target_pos.y += target_vel.y * (time - data_selected_.header.stamp).toSec() - odom2gimbal_.transform.translation.y;
+  target_pos.z += target_vel.z * (time - data_selected_.header.stamp).toSec() - odom2gimbal_.transform.translation.z;
   target_vel.x -= chassis_vel_->linear_->x();
   target_vel.y -= chassis_vel_->linear_->y();
   target_vel.z -= chassis_vel_->linear_->z();
-  bool solve_success = bullet_solver_->solve(target_pos, target_vel, cmd_gimbal_.bullet_speed, yaw, data_track_.v_yaw,
-                                             data_track_.radius_1, data_track_.radius_2, data_track_.dz,
-                                             data_track_.armors_num, chassis_vel_->angular_->z());
-  bullet_solver_->judgeShootBeforehand(time, data_track_.v_yaw);
+  bool solve_success = bullet_solver_->solve(target_pos, target_vel, cmd_gimbal_.bullet_speed, yaw,
+                                             data_selected_.v_yaw, data_selected_.radius_1, data_selected_.radius_2,
+                                             data_selected_.dz, data_selected_.armors_num, chassis_vel_->angular_->z());
+  bullet_solver_->judgeShootBeforehand(time, data_selected_.v_yaw);
 
   if (publish_rate_ > 0.0 && last_publish_time_ + ros::Duration(1.0 / publish_rate_) < time)
   {
     if (error_pub_->trylock())
     {
-      double error =
-          bullet_solver_->getGimbalError(target_pos, target_vel, data_track_.yaw, data_track_.v_yaw,
-                                         data_track_.radius_1, data_track_.radius_2, data_track_.dz,
-                                         data_track_.armors_num, yaw_compute, pitch_compute, cmd_gimbal_.bullet_speed);
+      double error = bullet_solver_->getGimbalError(target_pos, target_vel, data_selected_.yaw, data_selected_.v_yaw,
+                                                    data_selected_.radius_1, data_selected_.radius_2, data_selected_.dz,
+                                                    data_selected_.armors_num, yaw_compute, pitch_compute,
+                                                    cmd_gimbal_.bullet_speed);
       error_pub_->msg_.stamp = time;
       error_pub_->msg_.error = solve_success ? error : 1.0;
       error_pub_->unlockAndPublish();
@@ -436,17 +441,17 @@ void Controller::moveJoint(const ros::Time& time, const ros::Duration& period)
   {
     geometry_msgs::Point target_pos;
     geometry_msgs::Vector3 target_vel;
-    bullet_solver_->getSelectedArmorPosAndVel(target_pos, target_vel, data_track_.position, data_track_.velocity,
-                                              data_track_.yaw, data_track_.v_yaw, data_track_.radius_1,
-                                              data_track_.radius_2, data_track_.dz, data_track_.armors_num);
+    bullet_solver_->getSelectedArmorPosAndVel(target_pos, target_vel, data_selected_.position, data_selected_.velocity,
+                                              data_selected_.yaw, data_selected_.v_yaw, data_selected_.radius_1,
+                                              data_selected_.radius_2, data_selected_.dz, data_selected_.armors_num);
     tf2::Vector3 target_pos_tf, target_vel_tf;
     try
     {
       geometry_msgs::TransformStamped transform;
       if (joint_urdfs_.find(2) != joint_urdfs_.end())
       {
-        transform = robot_state_handle_.lookupTransform(odom2base_.child_frame_id, data_track_.header.frame_id,
-                                                        data_track_.header.stamp);
+        transform = robot_state_handle_.lookupTransform(odom2base_.child_frame_id, data_selected_.header.frame_id,
+                                                        data_selected_.header.stamp);
         tf2::doTransform(target_pos, target_pos, transform);
         tf2::doTransform(target_vel, target_vel, transform);
         tf2::fromMsg(target_pos, target_pos_tf);
@@ -456,7 +461,7 @@ void Controller::moveJoint(const ros::Time& time, const ros::Duration& period)
       if (joint_urdfs_.find(1) != joint_urdfs_.end())
       {
         transform = robot_state_handle_.lookupTransform(joint_urdfs_.at(1)->parent_link_name,
-                                                        data_track_.header.frame_id, data_track_.header.stamp);
+                                                        data_selected_.header.frame_id, data_selected_.header.stamp);
         tf2::doTransform(target_pos, target_pos, transform);
         tf2::doTransform(target_vel, target_vel, transform);
         tf2::fromMsg(target_pos, target_pos_tf);
