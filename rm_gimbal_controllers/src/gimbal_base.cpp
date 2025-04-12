@@ -41,7 +41,6 @@
 #include <rm_common/ros_utilities.h>
 #include <rm_common/ori_tool.h>
 #include <pluginlib/class_list_macros.hpp>
-#include <rm_common/decision/command_sender.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf/transform_datatypes.h>
 
@@ -67,8 +66,6 @@ bool Controller::init(hardware_interface::RobotHW* robot_hw, ros::NodeHandle& ro
   chassis_vel_ = std::make_shared<ChassisVel>(chassis_vel_nh);
   ros::NodeHandle nh_bullet_solver = ros::NodeHandle(controller_nh, "bullet_solver");
   bullet_solver_ = std::make_shared<BulletSolver>(nh_bullet_solver);
-  ros::NodeHandle gimbal_nh(controller_nh, "gimbal");
-  gimbal_cmd_sender_ = new rm_common::GimbalCommandSender(gimbal_nh);
 
   config_ = { .yaw_k_v_ = getParam(controller_nh, "controllers/yaw/k_v", 0.),
               .pitch_k_v_ = getParam(controller_nh, "controllers/pitch/k_v", 0.),
@@ -153,6 +150,7 @@ bool Controller::init(hardware_interface::RobotHW* robot_hw, ros::NodeHandle& ro
   data_track_sub_ = controller_nh.subscribe<rm_msgs::TrackData>("/track", 1, &Controller::trackCB, this);
   data_odom2target_sub_ =
       controller_nh.subscribe<rm_msgs::TrackData>("/odom2target", 1, &Controller::odom2targetCB, this);
+  use_lio_sub_ = controller_nh.subscribe<std_msgs::Bool>("use_lio", 1, &Controller::useLioCB, this);
   publish_rate_ = getParam(controller_nh, "publish_rate", 100.);
   error_pub_.reset(new realtime_tools::RealtimePublisher<rm_msgs::GimbalDesError>(controller_nh, "error", 100));
 
@@ -172,7 +170,8 @@ void Controller::update(const ros::Time& time, const ros::Duration& period)
   data_track_ = *track_rt_buffer_.readFromNonRT();
   data_odom2target_ = *odom2target_rt_buffer_.readFromRT();
   config_ = *config_rt_buffer_.readFromRT();
-  if (gimbal_cmd_sender_->getUseLio())
+  use_lio_ = *use_lio_rt_buffer_.readFromRT();
+  if (use_lio_.data)
     data_selected_ = data_odom2target_;
   else
     data_selected_ = data_track_;
@@ -509,7 +508,7 @@ void Controller::moveJoint(const ros::Time& time, const ros::Duration& period)
         pub.second->msg_.set_point_dot = vel_des[pub.first];
         pub.second->msg_.process_value = pos_real[pub.first];
         pub.second->msg_.error = angle_error[pub.first];
-        pub.second->msg_.command = pid_pos_.at(pub.first)->getCurrentCmd();
+        pub.second->msg_.command = pid_pos_[pub.first]->getCurrentCmd();
         pub.second->unlockAndPublish();
       }
     }
@@ -604,6 +603,11 @@ void Controller::trackCB(const rm_msgs::TrackDataConstPtr& msg)
 void Controller::odom2targetCB(const rm_msgs::TrackDataConstPtr& msg)
 {
   odom2target_rt_buffer_.writeFromNonRT(*msg);
+}
+
+void Controller::useLioCB(const std_msgs::BoolConstPtr& msg)
+{
+  use_lio_rt_buffer_.writeFromNonRT(*msg);
 }
 
 void Controller::reconfigCB(rm_gimbal_controllers::GimbalBaseConfig& config, uint32_t /*unused*/)

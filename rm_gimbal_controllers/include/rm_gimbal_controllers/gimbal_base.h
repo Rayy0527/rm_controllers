@@ -55,7 +55,6 @@
 #include <urdf/model.h>
 #include <dynamic_reconfigure/server.h>
 #include <realtime_tools/realtime_publisher.h>
-#include <rm_common/decision/command_sender.h>
 #include <unordered_map>
 
 namespace rm_gimbal_controllers
@@ -154,6 +153,7 @@ private:
   void commandCB(const rm_msgs::GimbalCmdConstPtr& msg);
   void trackCB(const rm_msgs::TrackDataConstPtr& msg);
   void odom2targetCB(const rm_msgs::TrackDataConstPtr& msg);
+  void useLioCB(const std_msgs::BoolConstPtr& msg);
   void reconfigCB(rm_gimbal_controllers::GimbalBaseConfig& config, uint32_t);
   std::string getGimbalFrameID(std::unordered_map<int, urdf::JointConstSharedPtr> joint_urdfs);
   std::string getBaseFrameID(std::unordered_map<int, urdf::JointConstSharedPtr> joint_urdfs);
@@ -175,12 +175,14 @@ private:
   ros::Subscriber cmd_gimbal_sub_;
   ros::Subscriber data_track_sub_;
   ros::Subscriber data_odom2target_sub_;
+  ros::Subscriber use_lio_sub_;
   realtime_tools::RealtimeBuffer<rm_msgs::GimbalCmd> cmd_rt_buffer_;
   realtime_tools::RealtimeBuffer<rm_msgs::TrackData> track_rt_buffer_, odom2target_rt_buffer_;
+  realtime_tools::RealtimeBuffer<std_msgs::Bool> use_lio_rt_buffer_;
 
   rm_msgs::GimbalCmd cmd_gimbal_;
   rm_msgs::TrackData data_track_, data_odom2target_, data_selected_;
-  rm_common::GimbalCommandSender* gimbal_cmd_sender_{};
+  std_msgs::Bool use_lio_;
   std::string gimbal_des_frame_id_{}, imu_name_{};
   double publish_rate_{};
   bool state_changed_{};
