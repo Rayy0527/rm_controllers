@@ -150,7 +150,7 @@ bool Controller::init(hardware_interface::RobotHW* robot_hw, ros::NodeHandle& ro
   data_track_sub_ = controller_nh.subscribe<rm_msgs::TrackData>("/track", 1, &Controller::trackCB, this);
   data_odom2target_sub_ =
       controller_nh.subscribe<rm_msgs::TrackData>("/odom2target", 1, &Controller::odom2targetCB, this);
-  use_lio_sub_ = controller_nh.subscribe<std_msgs::Bool>("use_lio", 1, &Controller::useLioCB, this);
+  use_lio_sub_ = controller_nh.subscribe<std_msgs::Bool>("/use_lio", 1, &Controller::useLioCB, this);
   publish_rate_ = getParam(controller_nh, "publish_rate", 100.);
   error_pub_.reset(new realtime_tools::RealtimePublisher<rm_msgs::GimbalDesError>(controller_nh, "error", 100));
 
