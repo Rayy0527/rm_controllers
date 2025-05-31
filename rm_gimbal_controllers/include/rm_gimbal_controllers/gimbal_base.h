@@ -56,6 +56,8 @@
 #include <dynamic_reconfigure/server.h>
 #include <realtime_tools/realtime_publisher.h>
 #include <unordered_map>
+#include <rm_common/linear_interpolation.h>
+#include <std_msgs/Float32.h>
 
 namespace rm_gimbal_controllers
 {
@@ -153,11 +155,13 @@ private:
   void commandCB(const rm_msgs::GimbalCmdConstPtr& msg);
   void trackCB(const rm_msgs::TrackDataConstPtr& msg);
   void odom2targetCB(const rm_msgs::TrackDataConstPtr& msg);
+  void baseDistanceCB(const std_msgs::Float32ConstPtr& msg);
   void useLioCB(const std_msgs::BoolConstPtr& msg);
   void reconfigCB(rm_gimbal_controllers::GimbalBaseConfig& config, uint32_t);
   std::string getGimbalFrameID(std::unordered_map<int, urdf::JointConstSharedPtr> joint_urdfs);
   std::string getBaseFrameID(std::unordered_map<int, urdf::JointConstSharedPtr> joint_urdfs);
 
+  rm_common::LinearInterp output_pitch_match;
   rm_control::RobotStateHandle robot_state_handle_;
   hardware_interface::ImuSensorHandle imu_sensor_handle_;
   std::unordered_map<int, std::unique_ptr<effort_controllers::JointVelocityController>> ctrls_;
@@ -175,13 +179,16 @@ private:
   ros::Subscriber cmd_gimbal_sub_;
   ros::Subscriber data_track_sub_;
   ros::Subscriber data_odom2target_sub_;
+  ros::Subscriber base_distance_sub_;
   ros::Subscriber use_lio_sub_;
   realtime_tools::RealtimeBuffer<rm_msgs::GimbalCmd> cmd_rt_buffer_;
   realtime_tools::RealtimeBuffer<rm_msgs::TrackData> track_rt_buffer_, odom2target_rt_buffer_;
+  realtime_tools::RealtimeBuffer<std_msgs::Float32> base_distance_rt_buffer_;
   realtime_tools::RealtimeBuffer<std_msgs::Bool> use_lio_rt_buffer_;
 
   rm_msgs::GimbalCmd cmd_gimbal_;
   rm_msgs::TrackData data_track_, data_odom2target_, data_selected_;
+  std_msgs::Float32 base_distance_;
   std_msgs::Bool use_lio_;
   std::string gimbal_des_frame_id_{}, imu_name_{};
   double publish_rate_{};

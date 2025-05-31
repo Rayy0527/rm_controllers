@@ -136,6 +136,12 @@ bool Controller::init(hardware_interface::RobotHW* robot_hw, ros::NodeHandle& ro
     ROS_INFO("Param imu_name has not set, use motors' data instead of imu.");
   }
 
+  XmlRpc::XmlRpcValue xml_rpc_value_linear;
+  if (!controller_nh.getParam("output_pitch_match", xml_rpc_value_linear))
+    ROS_ERROR("Pitch match linear velocity no defined (namespace: %s)", controller_nh.getNamespace().c_str());
+  else
+    output_pitch_match.init(xml_rpc_value_linear);
+
   gimbal_des_frame_id_ = getGimbalFrameID(joint_urdfs_) + "_des";
   odom2gimbal_des_.header.frame_id = "odom";
   odom2gimbal_des_.child_frame_id = gimbal_des_frame_id_;
@@ -151,6 +157,8 @@ bool Controller::init(hardware_interface::RobotHW* robot_hw, ros::NodeHandle& ro
   data_track_sub_ = controller_nh.subscribe<rm_msgs::TrackData>("/track", 1, &Controller::trackCB, this);
   data_odom2target_sub_ =
       controller_nh.subscribe<rm_msgs::TrackData>("/odom2target", 1, &Controller::odom2targetCB, this);
+  base_distance_sub_ =
+      controller_nh.subscribe<std_msgs::Float32>("/dis_base2target", 1, &Controller::baseDistanceCB, this);
   use_lio_sub_ = controller_nh.subscribe<std_msgs::Bool>("/use_lio", 1, &Controller::useLioCB, this);
   publish_rate_ = getParam(controller_nh, "publish_rate", 100.);
   error_pub_.reset(new realtime_tools::RealtimePublisher<rm_msgs::GimbalDesError>(controller_nh, "error", 100));
@@ -170,6 +178,7 @@ void Controller::update(const ros::Time& time, const ros::Duration& period)
   cmd_gimbal_ = *cmd_rt_buffer_.readFromRT();
   data_track_ = *track_rt_buffer_.readFromNonRT();
   data_odom2target_ = *odom2target_rt_buffer_.readFromRT();
+  base_distance_ = *base_distance_rt_buffer_.readFromRT();
   config_ = *config_rt_buffer_.readFromRT();
   use_lio_ = *use_lio_rt_buffer_.readFromRT();
   if (use_lio_.data)
@@ -306,8 +315,12 @@ void Controller::track(const ros::Time& time)
     last_publish_time_ = time;
   }
 
-  if (solve_success)
+  if (solve_success && !use_lio_.data)
     setDes(time, bullet_solver_->getYaw(), bullet_solver_->getPitch());
+  else if (use_lio_.data)
+  {
+    setDes(time, bullet_solver_->getYaw(), output_pitch_match.output(base_distance_.data));
+  }
   else
   {
     odom2gimbal_des_.header.stamp = time;
@@ -604,6 +617,11 @@ void Controller::trackCB(const rm_msgs::TrackDataConstPtr& msg)
 void Controller::odom2targetCB(const rm_msgs::TrackDataConstPtr& msg)
 {
   odom2target_rt_buffer_.writeFromNonRT(*msg);
+}
+
+void Controller::baseDistanceCB(const std_msgs::Float32ConstPtr& msg)
+{
+  base_distance_rt_buffer_.writeFromNonRT(*msg);
 }
 
 void Controller::useLioCB(const std_msgs::BoolConstPtr& msg)
